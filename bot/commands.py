@@ -224,7 +224,9 @@ class CommandsMixin:
                 "`/child add <name> [pin]`\n"
                 "`/child remove|rename|pin <name>`\n\n"
                 "**Setup:**\n"
-                "`/setup` - Interactive setup hub\n\n",
+                "`/setup` - Interactive setup hub\n\n"
+                "**Content Review:**\n"
+                "`/review <url_or_video_id>` - Manual content review\n\n",
                 app_name=self.tr("App Name"),
                 version=__version__,
             )
