@@ -113,7 +113,7 @@ class ContentReviewMixin:
                 )
                 return
 
-            transcript_text = " ".join(entry["text"] for entry in transcript_list)
+            transcript_text = " ".join(entry.text for entry in transcript_list)
 
         except Exception as e:
             logger.warning(f"Transcript fetch failed for {video_id}: {e}")
