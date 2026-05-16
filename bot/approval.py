@@ -1,5 +1,6 @@
 """Approval mixin: video request notifications, auto-approve, child selector, profile deletion."""
 
+import asyncio
 import logging
 import re
 from io import BytesIO
@@ -143,6 +144,8 @@ class ApprovalMixin:
                 )
             except Exception as fallback_error:
                 logger.error(f"Failed to notify about video {video_id}: {fallback_error}")
+
+        asyncio.create_task(self._send_content_review(video))
 
     async def _cb_child_select(self, query, update: Update, context, profile_id: str) -> None:
         """Handle child selector button press."""

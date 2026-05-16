@@ -23,6 +23,7 @@ from bot.activity import ActivityMixin
 from bot.approval import ApprovalMixin
 from bot.channels import ChannelMixin
 from bot.commands import CommandsMixin
+from bot.content_review import ContentReviewMixin
 from bot.setup import SetupMixin
 from bot.timelimits import TimeLimitMixin
 from data.child_store import ChildStore
@@ -40,7 +41,7 @@ from i18n import (
 logger = logging.getLogger(__name__)
 
 
-class BrainRotGuardBot(SetupMixin, ApprovalMixin, ChannelMixin, TimeLimitMixin, CommandsMixin, ActivityMixin):
+class BrainRotGuardBot(SetupMixin, ApprovalMixin, ContentReviewMixin, ChannelMixin, TimeLimitMixin, CommandsMixin, ActivityMixin):
     """Telegram bot for parent video approval."""
 
     def __init__(self, bot_token: str, admin_chat_id: str, video_store, config=None,
