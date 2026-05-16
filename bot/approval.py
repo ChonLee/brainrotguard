@@ -123,6 +123,7 @@ class ApprovalMixin:
                                     reply_markup=keyboard,
                                     parse_mode=MD2,
                                 )
+                                asyncio.create_task(self._send_content_review(video))
                                 return
                 except Exception as e:
                     logger.warning(f"Failed to send thumbnail: {e}")
