@@ -1,4 +1,4 @@
-"""ContentReviewMixin: auto-reviews video transcripts via Claude API after approval notifications."""
+"""ContentReviewMixin: auto-reviews video transcripts via a local Ollama instance."""
 
 import asyncio
 import logging
@@ -28,18 +28,19 @@ REVIEW_SYSTEM_PROMPT = (
 
 
 class ContentReviewMixin:
-    """Adds automatic Claude content review after video request notifications."""
+    """Adds automatic Ollama content review after video request notifications."""
 
     async def _send_content_review(self, video: dict) -> None:
-        """Fetch transcript and post a Claude content review as a follow-up Telegram message."""
+        """Fetch transcript and post an Ollama content review as a follow-up Telegram message."""
         video_id = video["video_id"]
         title = video["title"]
 
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            logger.warning("ANTHROPIC_API_KEY not set — skipping content review")
+        ollama_url = os.environ.get("OLLAMA_BASE_URL")
+        if not ollama_url:
+            logger.warning("OLLAMA_BASE_URL not set — skipping content review")
             return
 
+        ollama_model = os.environ.get("OLLAMA_MODEL", "gemma4:31b-cloud")
         loop = asyncio.get_event_loop()
 
         # Fetch transcript
@@ -72,27 +73,33 @@ class ContentReviewMixin:
             )
             return
 
-        # Call Claude API
+        # Call Ollama via OpenAI-compatible API
         try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=api_key)
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url=f"{ollama_url.rstrip('/')}/v1",
+                api_key="ollama",  # Ollama doesn't require a real key
+            )
 
             def _review():
-                return client.messages.create(
-                    model="claude-haiku-4-5-20251001",
+                return client.chat.completions.create(
+                    model=ollama_model,
                     max_tokens=1024,
-                    system=REVIEW_SYSTEM_PROMPT,
-                    messages=[{
-                        "role": "user",
-                        "content": (
-                            f"Review this transcript for the video \"{title}\":\n\n"
-                            f"{transcript_text[:30000]}"
-                        ),
-                    }],
+                    messages=[
+                        {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Review this transcript for the video \"{title}\":\n\n"
+                                f"{transcript_text[:30000]}"
+                            ),
+                        },
+                    ],
                 )
 
             response = await loop.run_in_executor(None, _review)
-            review_text = response.content[0].text
+            review_text = response.choices[0].message.content
 
             header = f"\U0001f50d Content Review: {title}\n\n"
             full_text = header + review_text
@@ -105,4 +112,4 @@ class ContentReviewMixin:
                 )
 
         except Exception as e:
-            logger.error(f"Content review API call failed for {video_id}: {e}")
+            logger.error(f"Content review failed for {video_id}: {e}")
