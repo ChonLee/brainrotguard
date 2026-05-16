@@ -4,6 +4,9 @@ import asyncio
 import logging
 import os
 
+from telegram import Update
+from telegram.ext import ContextTypes
+
 logger = logging.getLogger(__name__)
 
 REVIEW_SYSTEM_PROMPT = (
@@ -29,6 +32,52 @@ REVIEW_SYSTEM_PROMPT = (
 
 class ContentReviewMixin:
     """Adds automatic Ollama content review after video request notifications."""
+
+    async def _cmd_review(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/review <youtube_url_or_video_id> — manually run a content review."""
+        if not await self._require_admin(update):
+            return
+
+        args = context.args
+        if not args:
+            await update.effective_message.reply_text(
+                "Usage: /review <youtube_url_or_video_id>"
+            )
+            return
+
+        from youtube.extractor import extract_video_id
+        raw = args[0].strip()
+        video_id = extract_video_id(raw) or raw
+
+        # Basic sanity check on the ID
+        import re
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{11}", video_id):
+            await update.effective_message.reply_text(
+                f"⚠️ Couldn't extract a valid video ID from: {raw}"
+            )
+            return
+
+        # Try to get the title from metadata; fall back to the ID
+        title = video_id
+        try:
+            from youtube.extractor import extract_metadata
+            metadata = await extract_metadata(video_id)
+            if metadata and metadata.get("title"):
+                title = metadata["title"]
+        except Exception:
+            pass
+
+        ack = await update.effective_message.reply_text(
+            f"🔍 Reviewing: {title}\nThis may take up to a minute..."
+        )
+
+        await self._send_content_review({"video_id": video_id, "title": title})
+
+        # Clean up the "reviewing..." message
+        try:
+            await ack.delete()
+        except Exception:
+            pass
 
     async def _send_content_review(self, video: dict) -> None:
         """Fetch transcript and post an Ollama content review as a follow-up Telegram message."""

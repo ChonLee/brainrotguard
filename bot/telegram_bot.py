@@ -254,6 +254,7 @@ class BrainRotGuardBot(SetupMixin, ApprovalMixin, ContentReviewMixin, ChannelMix
         self._app.add_handler(CommandHandler("autoload", self._cmd_autoload))
         self._app.add_handler(CommandHandler("child", self._cmd_child))
         self._app.add_handler(CommandHandler("setup", self._cmd_setup))
+        self._app.add_handler(CommandHandler("review", self._cmd_review))
         self._app.add_handler(MessageHandler(
             filters.Regex(r'^/revoke_[a-zA-Z0-9_]{11}$'), self._cmd_revoke,
         ))
