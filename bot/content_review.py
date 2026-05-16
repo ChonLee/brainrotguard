@@ -40,7 +40,7 @@ class ContentReviewMixin:
             logger.warning("OLLAMA_BASE_URL not set — skipping content review")
             return
 
-        ollama_model = os.environ.get("OLLAMA_MODEL", "gemma4:31b-cloud")
+        ollama_model = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
         loop = asyncio.get_event_loop()
 
         # Fetch transcript
