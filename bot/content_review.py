@@ -98,9 +98,10 @@ class ContentReviewMixin:
 
             def _fetch():
                 try:
-                    return YouTubeTranscriptApi.get_transcript(
-                        video_id, languages=["en", "en-US", "en-GB"]
-                    )
+                    api = YouTubeTranscriptApi()
+                    transcript_list = api.list(video_id)
+                    transcript = transcript_list.find_transcript(["en", "en-US", "en-GB"])
+                    return list(transcript.fetch())
                 except (TranscriptsDisabled, NoTranscriptFound):
                     return None
 
