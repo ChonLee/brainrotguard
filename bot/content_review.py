@@ -15,11 +15,25 @@ REVIEW_SYSTEM_PROMPT = (
     "Review for:\n"
     "- Language: profanity (any level), euphemisms (freaking, shoot, crap), "
     "blasphemy/Lord's name in vain, crude humor\n"
-    "- Sexual content: suggestive language, innuendo, references to sexual activity\n"
-    "- Violence: graphic violence, dark/occult themes, aggressive language\n"
+    "- Sexual content: explicit suggestive language, innuendo, or direct references to sexual activity. "
+    "Requires clear intent — do not infer adult themes from ambiguous words alone.\n"
+    "- Violence: graphic violence, dark/occult themes, aggressive language directed at real people\n"
     "- Substances: alcohol or drug use portrayed positively\n"
     "- Other: mockery of faith/Christianity, anti-Christian worldviews, gambling, "
     "disrespect toward authority\n\n"
+    "YouTube transcript note: YouTube auto-censors profanity by replacing it with [ __ ] in "
+    "transcripts. Treat any occurrence of [ __ ] as censored profanity — flag it the same as "
+    "if the actual word were present. Do not dismiss [ __ ] as unknown or benign.\n\n"
+    "Common false positives — dismiss these without flagging:\n"
+    "- Sports team names that contain flaggable words: Magic (Orlando Magic), Heat, Wizards, "
+    "Devils, Rockets, Warriors, Thunder, Bulls, etc.\n"
+    "- Sports violence language: kill, crush, destroy, murder, attack, beat — when used to "
+    "describe game outcomes or play\n"
+    "- Arena, court, field, stadium references in a sports context\n"
+    "- 'Magic' in gaming or sports context (Orlando Magic, magic spells in a fantasy game)\n"
+    "- Travel or location references that happen to sound suggestive\n\n"
+    "When context clearly indicates sports, gaming, or other benign activity, assume that "
+    "interpretation before inferring adult or violent intent.\n\n"
     "Report format (concise):\n"
     "1. Summary — one sentence on what the video is about\n"
     "2. Flags — each concern with severity (mild/moderate/strong) and brief context. "
@@ -89,7 +103,7 @@ class ContentReviewMixin:
             logger.warning("OLLAMA_BASE_URL not set — skipping content review")
             return
 
-        ollama_model = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+        ollama_model = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
         loop = asyncio.get_event_loop()
 
         # Fetch transcript
