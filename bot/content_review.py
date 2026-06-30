@@ -130,15 +130,24 @@ class ContentReviewMixin:
 
             transcript_text = " ".join(entry.text for entry in transcript_list)
 
-            # Detect YouTube's [ __ ] censorship placeholders
-            censored_count = len(re.findall(r'\[ __ \]', transcript_text))
+            # Detect YouTube's [ __ ] censorship placeholders, with timestamp links
+            flagged_entries = [e for e in transcript_list if '[ __ ]' in e.text]
+            censored_count = sum(e.text.count('[ __ ]') for e in flagged_entries)
             censored_note = ""
             if censored_count > 0:
+                def _fmt_ts(seconds):
+                    s = int(seconds)
+                    m, s = divmod(s, 60)
+                    h, m = divmod(m, 60)
+                    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
                 if censored_count < 5:
-                    # Extract sentences containing the placeholder
-                    sentences = re.split(r'(?<=[.!?])\s+', transcript_text)
-                    flagged = [s.strip() for s in sentences if '[ __ ]' in s]
-                    excerpts = "\n".join(f'  • "{s}"' for s in flagged)
+                    lines = []
+                    for e in flagged_entries:
+                        ts = _fmt_ts(e.start)
+                        url = f"https://www.youtube.com/watch?v={video_id}&t={int(e.start)}s"
+                        lines.append(f'  • [{ts}] "{e.text.strip()}" {url}')
+                    excerpts = "\n".join(lines)
                     censored_note = (
                         f"\n⚠️ YouTube censored profanity detected: {censored_count}x [ __ ]\n"
                         f"{excerpts}\n"
