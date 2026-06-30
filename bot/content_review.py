@@ -133,7 +133,7 @@ class ContentReviewMixin:
             # Detect YouTube's [ __ ] censorship placeholders, with timestamp links
             flagged_entries = [e for e in transcript_list if '[ __ ]' in e.text]
             censored_count = sum(e.text.count('[ __ ]') for e in flagged_entries)
-            censored_note = ""
+            censored_html = ""
             if censored_count > 0:
                 def _fmt_ts(seconds):
                     s = int(seconds)
@@ -141,21 +141,19 @@ class ContentReviewMixin:
                     h, m = divmod(m, 60)
                     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
-                if censored_count < 5:
-                    lines = []
-                    for e in flagged_entries:
-                        ts = _fmt_ts(e.start)
-                        url = f"https://www.youtube.com/watch?v={video_id}&t={int(e.start)}s"
-                        lines.append(f'  • [{ts}] "{e.text.strip()}" {url}')
-                    excerpts = "\n".join(lines)
-                    censored_note = (
-                        f"\n⚠️ YouTube censored profanity detected: {censored_count}x [ __ ]\n"
-                        f"{excerpts}\n"
-                    )
-                else:
-                    censored_note = (
-                        f"\n⚠️ YouTube censored profanity detected: {censored_count}x [ __ ]\n"
-                    )
+                lines = []
+                for e in flagged_entries[:5]:
+                    ts = _fmt_ts(e.start)
+                    url = f"https://www.youtube.com/watch?v={video_id}&t={int(e.start)}s"
+                    snippet = e.text.strip().replace("&", "&amp;").replace("<", "&lt;")
+                    lines.append(f'  • <a href="{url}">{ts}</a> "{snippet}"')
+                if len(flagged_entries) > 5:
+                    lines.append(f"  • ...and {len(flagged_entries) - 5} more")
+                excerpts = "\n".join(lines)
+                censored_html = (
+                    f"⚠️ YouTube censored profanity: {censored_count}x [ __ ]\n"
+                    f"{excerpts}"
+                )
 
         except Exception as e:
             logger.warning(f"Transcript fetch failed for {video_id}: {e}")
@@ -193,7 +191,15 @@ class ContentReviewMixin:
             response = await loop.run_in_executor(None, _review)
             review_text = response.choices[0].message.content
 
-            header = f"\U0001f50d Content Review: {title}\n{censored_note}\n"
+            if censored_html:
+                await self._app.bot.send_message(
+                    chat_id=self.admin_chat_target,
+                    text=censored_html,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+
+            header = f"\U0001f50d Content Review: {title}\n\n"
             full_text = header + review_text
 
             # Send, splitting at Telegram's 4096-char limit if needed
