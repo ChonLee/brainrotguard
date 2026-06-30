@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import re
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -129,6 +130,24 @@ class ContentReviewMixin:
 
             transcript_text = " ".join(entry.text for entry in transcript_list)
 
+            # Detect YouTube's [ __ ] censorship placeholders
+            censored_count = len(re.findall(r'\[ __ \]', transcript_text))
+            censored_note = ""
+            if censored_count > 0:
+                if censored_count < 5:
+                    # Extract sentences containing the placeholder
+                    sentences = re.split(r'(?<=[.!?])\s+', transcript_text)
+                    flagged = [s.strip() for s in sentences if '[ __ ]' in s]
+                    excerpts = "\n".join(f'  • "{s}"' for s in flagged)
+                    censored_note = (
+                        f"\n⚠️ YouTube censored profanity detected: {censored_count}x [ __ ]\n"
+                        f"{excerpts}\n"
+                    )
+                else:
+                    censored_note = (
+                        f"\n⚠️ YouTube censored profanity detected: {censored_count}x [ __ ]\n"
+                    )
+
         except Exception as e:
             logger.warning(f"Transcript fetch failed for {video_id}: {e}")
             await self._app.bot.send_message(
@@ -165,7 +184,7 @@ class ContentReviewMixin:
             response = await loop.run_in_executor(None, _review)
             review_text = response.choices[0].message.content
 
-            header = f"\U0001f50d Content Review: {title}\n\n"
+            header = f"\U0001f50d Content Review: {title}\n{censored_note}\n"
             full_text = header + review_text
 
             # Send, splitting at Telegram's 4096-char limit if needed
