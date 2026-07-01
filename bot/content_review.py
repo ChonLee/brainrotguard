@@ -65,19 +65,28 @@ def _build_timestamped_transcript(entries, interval=20):
 
 
 def _extract_flag_links(review_text, video_id, limit=25):
-    """Parse [M:SS] timestamps from the review and return HTML links, up to limit."""
+    """Parse [M:SS] timestamps from the review and return HTML lines with context, up to limit."""
+    lines = review_text.splitlines()
     seen = set()
-    links = []
-    for m in _TS_PAT.finditer(review_text):
-        total_s = int(m.group(1)) * 60 + int(m.group(2))
-        if total_s not in seen:
+    results = []
+    for line in lines:
+        for m in _TS_PAT.finditer(line):
+            total_s = int(m.group(1)) * 60 + int(m.group(2))
+            if total_s in seen:
+                continue
             seen.add(total_s)
             ts_str = f"{m.group(1)}:{m.group(2)}"
             url = f"https://www.youtube.com/watch?v={video_id}&t={total_s}s"
-            links.append(f'<a href="{url}">[{ts_str}]</a>')
-            if len(links) >= limit:
+            # Strip the timestamp marker and clean up surrounding punctuation/whitespace
+            context = _TS_PAT.sub("", line).strip().lstrip("-•: ").strip()
+            context = context[:120] + ("…" if len(context) > 120 else "")
+            link = f'<a href="{url}">[{ts_str}]</a>'
+            results.append(f"{link} {context}" if context else link)
+            if len(results) >= limit:
                 break
-    return links
+        if len(results) >= limit:
+            break
+    return results
 
 
 class ContentReviewMixin:
@@ -204,7 +213,7 @@ class ContentReviewMixin:
             # Extract flagged timestamps and send as clickable links
             flag_links = _extract_flag_links(review_text, video_id, limit=25)
             if flag_links:
-                links_html = "⚠️ Flagged moments:\n" + "  ".join(flag_links)
+                links_html = "⚠️ Flagged moments:\n" + "\n".join(flag_links)
                 await self._app.bot.send_message(
                     chat_id=self.admin_chat_target,
                     text=links_html,
