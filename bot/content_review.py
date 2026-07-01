@@ -131,7 +131,7 @@ class ContentReviewMixin:
             transcript_text = " ".join(entry.text for entry in transcript_list)
 
             # Detect YouTube's [ __ ] censorship placeholders, with timestamp links
-            _censor_pat = re.compile(r'\[ ?_+ ?\]')
+            _censor_pat = re.compile(r'\[\s*_+\s*\]')
             flagged_entries = [e for e in transcript_list if _censor_pat.search(e.text)]
             censored_count = sum(len(_censor_pat.findall(e.text)) for e in flagged_entries)
             censored_html = ""
