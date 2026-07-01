@@ -25,9 +25,8 @@ REVIEW_SYSTEM_PROMPT = (
     "YouTube transcript note: YouTube auto-censors profanity by replacing it with [ __ ] in "
     "transcripts. Treat any occurrence of [ __ ] as censored profanity — flag it the same as "
     "if the actual word were present. Do not dismiss [ __ ] as unknown or benign. "
-    "IMPORTANT: Only flag [ __ ] if it literally appears in the transcript text provided. "
-    "Do not infer or assume censored profanity based on your knowledge of the song or artist — "
-    "only report what is actually present in the transcript.\n\n"
+    "Only flag [ __ ] if it literally appears in the transcript text provided — do not infer "
+    "censored profanity based on your knowledge of the song or artist.\n\n"
     "Common false positives — dismiss these without flagging:\n"
     "- Sports team names that contain flaggable words: Magic (Orlando Magic), Heat, Wizards, "
     "Devils, Rockets, Warriors, Thunder, Bulls, etc.\n"
@@ -38,14 +37,47 @@ REVIEW_SYSTEM_PROMPT = (
     "- Travel or location references that happen to sound suggestive\n\n"
     "When context clearly indicates sports, gaming, or other benign activity, assume that "
     "interpretation before inferring adult or violent intent.\n\n"
+    "The transcript includes [M:SS] timestamp markers. When listing a flag, cite the nearest "
+    "timestamp using the same [M:SS] format so the parent can jump directly to that moment.\n\n"
     "Report format (concise):\n"
     "1. Summary — one sentence on what the video is about\n"
-    "2. Flags — each concern with severity (mild/moderate/strong) and brief context. "
-    "Dismiss false positives briefly.\n"
+    "2. Flags — each concern with severity (mild/moderate/strong), a [M:SS] timestamp, "
+    "and brief context. Dismiss false positives briefly.\n"
     "3. Clean — categories with nothing flagged\n"
     "4. Verdict — Suitable / Not suitable / Borderline (with one-line reason)\n\n"
     "Be thorough but not alarmist. Flag real concerns clearly."
 )
+
+_TS_PAT = re.compile(r'\[(\d{1,2}):(\d{2})\]')
+
+
+def _build_timestamped_transcript(entries, interval=20):
+    """Build transcript text with [M:SS] markers every `interval` seconds."""
+    parts = []
+    last_marker = -interval
+    for e in entries:
+        if e.start - last_marker >= interval:
+            m, s = divmod(int(e.start), 60)
+            parts.append(f"[{m}:{s:02d}]")
+            last_marker = e.start
+        parts.append(e.text)
+    return " ".join(parts)
+
+
+def _extract_flag_links(review_text, video_id, limit=25):
+    """Parse [M:SS] timestamps from the review and return HTML links, up to limit."""
+    seen = set()
+    links = []
+    for m in _TS_PAT.finditer(review_text):
+        total_s = int(m.group(1)) * 60 + int(m.group(2))
+        if total_s not in seen:
+            seen.add(total_s)
+            ts_str = f"{m.group(1)}:{m.group(2)}"
+            url = f"https://www.youtube.com/watch?v={video_id}&t={total_s}s"
+            links.append(f'<a href="{url}">[{ts_str}]</a>')
+            if len(links) >= limit:
+                break
+    return links
 
 
 class ContentReviewMixin:
@@ -131,33 +163,7 @@ class ContentReviewMixin:
                 )
                 return
 
-            transcript_text = " ".join(entry.text for entry in transcript_list)
-
-            # Detect YouTube's [ __ ] censorship placeholders, with timestamp links
-            _censor_pat = re.compile(r'\[\s*_+\s*\]')
-            flagged_entries = [e for e in transcript_list if _censor_pat.search(e.text)]
-            censored_count = sum(len(_censor_pat.findall(e.text)) for e in flagged_entries)
-            censored_html = ""
-            if censored_count > 0:
-                def _fmt_ts(seconds):
-                    s = int(seconds)
-                    m, s = divmod(s, 60)
-                    h, m = divmod(m, 60)
-                    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
-
-                lines = []
-                for e in flagged_entries[:5]:
-                    ts = _fmt_ts(e.start)
-                    url = f"https://www.youtube.com/watch?v={video_id}&t={int(e.start)}s"
-                    snippet = e.text.strip().replace("&", "&amp;").replace("<", "&lt;")
-                    lines.append(f'  • <a href="{url}">{ts}</a> "{snippet}"')
-                if len(flagged_entries) > 5:
-                    lines.append(f"  • ...and {len(flagged_entries) - 5} more")
-                excerpts = "\n".join(lines)
-                censored_html = (
-                    f"⚠️ YouTube censored profanity: {censored_count}x [ __ ]\n"
-                    f"{excerpts}"
-                )
+            timestamped_transcript = _build_timestamped_transcript(transcript_list)
 
         except Exception as e:
             logger.warning(f"Transcript fetch failed for {video_id}: {e}")
@@ -186,7 +192,7 @@ class ContentReviewMixin:
                             "role": "user",
                             "content": (
                                 f"Review this transcript for the video \"{title}\":\n\n"
-                                f"{transcript_text[:30000]}"
+                                f"{timestamped_transcript[:30000]}"
                             ),
                         },
                     ],
@@ -195,10 +201,13 @@ class ContentReviewMixin:
             response = await loop.run_in_executor(None, _review)
             review_text = response.choices[0].message.content
 
-            if censored_html:
+            # Extract flagged timestamps and send as clickable links
+            flag_links = _extract_flag_links(review_text, video_id, limit=25)
+            if flag_links:
+                links_html = "⚠️ Flagged moments:\n" + "  ".join(flag_links)
                 await self._app.bot.send_message(
                     chat_id=self.admin_chat_target,
-                    text=censored_html,
+                    text=links_html,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
                 )
