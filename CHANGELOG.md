@@ -1,4 +1,16 @@
 # Changelog
+## v1.31.2 - 2026-08-11
+
+**Fixed**
+- **Security: re-enabled the player iframe `sandbox` attribute** — it was commented out in `c9b88a0` to work around what looked like broken playback on the test tablet, but the real cause was a DNS outage (already identified in `1511aef`) and the attribute was never restored. Every release from v1.30.x onward shipped without it, meaning YouTube's in-player links (video title, channel watermark, "Watch on YouTube") could navigate the child out of the app into a full browser YouTube session (fixes #42 — thanks @bquinn916)
+- Added `playsinline=1` to the embed URL — without it iOS hands playback to Apple's native fullscreen player, which renders outside the app's DOM and bypasses the pause overlay, end-of-video overlay, and custom fullscreen that normally cover YouTube's chrome. This is why the escape was more severe on iPad than Android
+- `test_service_worker_available_without_login` asserted a hardcoded cache name (`brainrotguard-static-v1`) and had been failing since the worker moved to v2; now matches any version so future cache bumps don't break the suite
+
+**Notes**
+- The sandbox retains `allow-same-origin`, which is required for the signed-in YouTube session that avoids the "confirm you're not a bot" wall (see #38) and for `enablejsapi` postMessage. It withholds `allow-popups` and `allow-top-navigation` — that omission is what blocks the escape
+- Both player fixes are unverified on iOS hardware; they are reasoned from documented iOS behaviour. Parents on iPad should enable **Guided Access** (Settings > Accessibility > Guided Access) as an OS-level lock, which does not depend on this fix being correct
+- Removed an unused `embed_url` template variable from the watch route — the template builds its own iframe `src` in JS, so the dead variable was a trap for anyone editing the wrong line
+
 ## v1.31.1 - 2026-04-09
 
 **Fixed**
