@@ -82,6 +82,7 @@ def get_child_name(request: Request) -> str:
 def base_ctx(request: Request) -> dict:
     """Common template context: child_name + multi_profile for base.html header."""
     vs = request.app.state.video_store
+    w_cfg = getattr(request.app.state, "web_config", None)
     profiles = vs.get_profiles() if vs else []
     locale = normalize_locale(getattr(request.app.state, "locale", "en"))
     # Populate avatar fields from session (or DB on first load after upgrade)
@@ -106,6 +107,7 @@ def base_ctx(request: Request) -> dict:
         "avatar_color": avatar_color,
         "avatar_icons": AVATAR_ICONS,
         "avatar_colors": AVATAR_COLORS,
+        "embed_host": getattr(w_cfg, "embed_host", "") or "https://www.youtube-nocookie.com",
     }
 
 

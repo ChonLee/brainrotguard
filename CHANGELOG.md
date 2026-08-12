@@ -1,4 +1,18 @@
 # Changelog
+## v1.32.0 - 2026-08-11
+
+**Added**
+- `BRG_EMBED_HOST` env var for switching YouTube iframe origin without code changes or redeploy. Whitelist: `https://www.youtube.com`, `https://www.youtube-nocookie.com`. Defaults to nocookie.
+
+**Fixed**
+- YouTube embed origin switched back to `youtube-nocookie.com` — reduces DNS allowlist requirements (tablet no longer needs full YouTube site whitelisting). Tradeoff: nocookie embeds lack signed-in session, so "confirm you're not a bot" may reappear; set `BRG_EMBED_HOST=https://www.youtube.com` and restart if needed.
+- Service worker navigation timeouts: requests now timeout after 8s instead of hanging indefinitely on unreachable origins. Timeout returns a 503 error page ("Can't reach BrainRotGuard") with retry link, avoiding frozen-state on cached splash screen.
+- Service worker cache version bumped v2 → v3 to purge old caches on upgrade.
+- CSP `frame-src` updated to allow both `https://www.youtube.com` and `https://www.youtube-nocookie.com`.
+
+**Notes**
+- Real-device playback verification on nocookie origin pending; adjust `BRG_EMBED_HOST` if bot-check appears frequently.
+
 ## v1.31.2 - 2026-08-11
 
 **Fixed**

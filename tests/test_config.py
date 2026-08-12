@@ -252,3 +252,22 @@ class TestWebConfig:
         monkeypatch.setenv("BRG_BASE_URL", "http://10.0.0.1:8080")
         cfg = WebConfig(base_url="http://custom:9090")
         assert cfg.base_url == "http://custom:9090"
+
+    def test_embed_host_defaults_to_nocookie(self, monkeypatch):
+        monkeypatch.delenv("BRG_EMBED_HOST", raising=False)
+        assert WebConfig().embed_host == "https://www.youtube-nocookie.com"
+
+    def test_embed_host_from_env(self, monkeypatch):
+        monkeypatch.setenv("BRG_EMBED_HOST", "https://www.youtube.com")
+        assert WebConfig().embed_host == "https://www.youtube.com"
+
+    @pytest.mark.parametrize("value", [
+        "https://evil.example.com",
+        "javascript:alert(1)",
+        "https://www.youtube.com.evil.example.com",
+        "",
+    ])
+    def test_embed_host_rejects_unknown_origin(self, monkeypatch, value):
+        """embed_host lands in an iframe src — only the two known origins may pass."""
+        monkeypatch.setenv("BRG_EMBED_HOST", value)
+        assert WebConfig().embed_host == "https://www.youtube-nocookie.com"
