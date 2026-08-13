@@ -98,15 +98,25 @@ Without this step, your kid can just open youtube.com in a browser or use the Yo
 2. **Enable Screen Time**: Go to **Settings** > **Screen Time** > **Content & Privacy Restrictions** > **Content Restrictions** > **Web Content**.
 3. **Limit websites**: Choose **Allowed Websites Only** and add your BrainRotGuard URL (e.g., `http://10.71.1.27:8080`). This blocks all other web browsing while keeping the PWA functional.
 
-### Why not DNS blocking?
+### DNS blocking (optional second layer)
 
-Previously, this guide recommended blocking `youtube.com` via DNS (AdGuard Home, Pi-hole, etc.) while allowing `youtube-nocookie.com` for the embedded player. **This no longer works** — YouTube's bot detection now blocks anonymous embedded playback with a "Sign in to confirm you're not a bot" wall. As of v1.x, BrainRotGuard uses standard `youtube.com` embeds, so the tablet needs a signed-in Google session. See [#36](https://github.com/GHJJ123/brainrotguard/issues/36) and [#38](https://github.com/GHJJ123/brainrotguard/issues/38) for details.
+DNS blocking closes a gap the app itself cannot: a second device, or a browser tab that simply goes to youtube.com directly. Whether it works depends on which embed origin BrainRotGuard is using.
 
-DNS blocking is still fine as an additional layer, but you must allow `www.youtube.com` through:
+**With the default `youtube-nocookie.com` embeds** (v1.32.0+), it works. Block `www.youtube.com` and allow only what the embedded player needs:
+
 ```
-@@||www.youtube.com^
+@@||youtube-nocookie.com^
 @@||googlevideo.com^
+@@||ytimg.com^
 ```
+
+The player loads from `youtube-nocookie.com`, and YouTube's own site does not serve pages on that domain — so blocking `www.youtube.com` stops direct browsing without stopping playback.
+
+**With `BRG_EMBED_HOST=https://www.youtube.com`**, it cannot work. Playback requires allowing `www.youtube.com`, and DNS cannot tell an embedded player apart from a browser tab — same domain, same query. On that setting, use the device-level controls above instead.
+
+**The tradeoff.** Nocookie embeds drop the signed-in Google session, so YouTube's bot detection may show "Sign in to confirm you're not a bot" on anonymous embedded playback. If that appears, set `BRG_EMBED_HOST=https://www.youtube.com` and restart — at the cost of the DNS enforcement described above. See [#36](https://github.com/GHJJ123/brainrotguard/issues/36) and [#38](https://github.com/GHJJ123/brainrotguard/issues/38).
+
+DNS blocking is bypassed by encrypted DNS (DoH), which most browsers enable without admin rights, and by a phone hotspot or VPN. Treat it as a layer, not a wall — the device-level controls above are what actually hold.
 
 ## Using the Pre-Built Docker Image
 

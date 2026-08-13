@@ -12,6 +12,7 @@
 
 **Notes**
 - Real-device playback verification on nocookie origin pending; adjust `BRG_EMBED_HOST` if bot-check appears frequently.
+- `docs/setup.md` DNS section rewritten. It previously told self-hosters DNS blocking "no longer works" — true while youtube.com embeds were the default, wrong once nocookie is. Now documents both origins and states plainly that DNS cannot distinguish an embedded player from a browser tab on the same domain, which is the whole reason the nocookie default matters for enforcement.
 
 ## v1.31.2 - 2026-08-11
 
