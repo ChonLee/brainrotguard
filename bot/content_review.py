@@ -1,4 +1,4 @@
-"""ContentReviewMixin: auto-reviews video transcripts via a local Ollama instance."""
+"""ContentReviewMixin: auto-reviews video transcripts via Ollama (local or cloud)."""
 
 import asyncio
 import logging
@@ -9,6 +9,36 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
+
+# Reviews are fire-and-forget tasks (see approval.py), so a burst of video
+# requests would otherwise hit the model all at once. Locally that exhausts
+# VRAM and can hang the host; on cloud it trips the plan's concurrency cap.
+# Free tier allows 1 concurrent request, Pro 3, Max 10.
+_review_sem: asyncio.Semaphore | None = None
+
+
+def _get_review_semaphore() -> asyncio.Semaphore:
+    global _review_sem
+    if _review_sem is None:
+        limit = max(1, int(os.environ.get("CONTENT_REVIEW_CONCURRENCY", "1")))
+        _review_sem = asyncio.Semaphore(limit)
+    return _review_sem
+
+
+def _resolve_provider() -> tuple[str, str, str] | None:
+    """Return (base_url, api_key, model) for cloud if keyed, else local Ollama."""
+    api_key = os.environ.get("OLLAMA_API_KEY")
+    if api_key:
+        # NOTE: model default is baked in, not read from an Unraid env var --
+        # colons in values break that template parser.
+        model = os.environ.get("OLLAMA_CLOUD_MODEL") or "gpt-oss:120b"
+        return "https://ollama.com/v1", api_key, model
+
+    base = os.environ.get("OLLAMA_BASE_URL")
+    if not base:
+        return None
+    model = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
+    return f"{base.rstrip('/')}/v1", "ollama", model
 
 REVIEW_SYSTEM_PROMPT = (
     "You are a Christian content reviewer. Screen video transcripts and flag anything "
@@ -143,12 +173,13 @@ class ContentReviewMixin:
         video_id = video["video_id"]
         title = video["title"]
 
-        ollama_url = os.environ.get("OLLAMA_BASE_URL")
-        if not ollama_url:
-            logger.warning("OLLAMA_BASE_URL not set — skipping content review")
+        provider = _resolve_provider()
+        if provider is None:
+            logger.warning(
+                "Neither OLLAMA_API_KEY nor OLLAMA_BASE_URL set — skipping content review"
+            )
             return
-
-        ollama_model = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
+        base_url, api_key, ollama_model = provider
         loop = asyncio.get_event_loop()
 
         # Fetch transcript
@@ -186,10 +217,7 @@ class ContentReviewMixin:
         try:
             from openai import OpenAI
 
-            client = OpenAI(
-                base_url=f"{ollama_url.rstrip('/')}/v1",
-                api_key="ollama",  # Ollama doesn't require a real key
-            )
+            client = OpenAI(base_url=base_url, api_key=api_key)
 
             def _review():
                 return client.chat.completions.create(
@@ -207,7 +235,8 @@ class ContentReviewMixin:
                     ],
                 )
 
-            response = await loop.run_in_executor(None, _review)
+            async with _get_review_semaphore():
+                response = await loop.run_in_executor(None, _review)
             review_text = response.choices[0].message.content
 
             # Extract flagged timestamps and send as clickable links
