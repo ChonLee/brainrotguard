@@ -1,4 +1,31 @@
 # Changelog
+## v1.32.0 - 2026-08-11
+
+**Added**
+- `BRG_EMBED_HOST` env var for switching YouTube iframe origin without code changes or redeploy. Whitelist: `https://www.youtube.com`, `https://www.youtube-nocookie.com`. Defaults to nocookie.
+
+**Fixed**
+- YouTube embed origin switched back to `youtube-nocookie.com` — reduces DNS allowlist requirements (tablet no longer needs full YouTube site whitelisting). Tradeoff: nocookie embeds lack signed-in session, so "confirm you're not a bot" may reappear; set `BRG_EMBED_HOST=https://www.youtube.com` and restart if needed.
+- Service worker navigation timeouts: requests now timeout after 8s instead of hanging indefinitely on unreachable origins. Timeout returns a 503 error page ("Can't reach BrainRotGuard") with retry link, avoiding frozen-state on cached splash screen.
+- Service worker cache version bumped v2 → v3 to purge old caches on upgrade.
+- CSP `frame-src` updated to allow both `https://www.youtube.com` and `https://www.youtube-nocookie.com`.
+
+**Notes**
+- Real-device playback verification on nocookie origin pending; adjust `BRG_EMBED_HOST` if bot-check appears frequently.
+- `docs/setup.md` DNS section rewritten. It previously told self-hosters DNS blocking "no longer works" — true while youtube.com embeds were the default, wrong once nocookie is. Now documents both origins and states plainly that DNS cannot distinguish an embedded player from a browser tab on the same domain, which is the whole reason the nocookie default matters for enforcement.
+
+## v1.31.2 - 2026-08-11
+
+**Fixed**
+- **Security: re-enabled the player iframe `sandbox` attribute** — it was commented out in `c9b88a0` to work around what looked like broken playback on the test tablet, but the real cause was a DNS outage (already identified in `1511aef`) and the attribute was never restored. Every release from v1.30.x onward shipped without it, meaning YouTube's in-player links (video title, channel watermark, "Watch on YouTube") could navigate the child out of the app into a full browser YouTube session (fixes #42 — thanks @bquinn916)
+- Added `playsinline=1` to the embed URL — without it iOS hands playback to Apple's native fullscreen player, which renders outside the app's DOM and bypasses the pause overlay, end-of-video overlay, and custom fullscreen that normally cover YouTube's chrome. This is why the escape was more severe on iPad than Android
+- `test_service_worker_available_without_login` asserted a hardcoded cache name (`brainrotguard-static-v1`) and had been failing since the worker moved to v2; now matches any version so future cache bumps don't break the suite
+
+**Notes**
+- The sandbox retains `allow-same-origin`, which is required for the signed-in YouTube session that avoids the "confirm you're not a bot" wall (see #38) and for `enablejsapi` postMessage. It withholds `allow-popups` and `allow-top-navigation` — that omission is what blocks the escape
+- Both player fixes are unverified on iOS hardware; they are reasoned from documented iOS behaviour. Parents on iPad should enable **Guided Access** (Settings > Accessibility > Guided Access) as an OS-level lock, which does not depend on this fix being correct
+- Removed an unused `embed_url` template variable from the watch route — the template builds its own iframe `src` in JS, so the dead variable was a trap for anyone editing the wrong line
+
 ## v1.31.1 - 2026-04-09
 
 **Fixed**

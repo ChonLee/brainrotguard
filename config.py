@@ -59,10 +59,23 @@ class WebConfig:
     pin: str = ""  # empty = no auth required
     session_secret: str = ""  # auto-generated if not set
     base_url: str = ""  # e.g. http://10.0.0.1:8080 — used for links in Telegram messages
+    embed_host: str = ""  # origin the player iframe is loaded from
+
+    # youtube-nocookie keeps www.youtube.com out of the DNS allowlist entirely, but
+    # it also drops the signed-in YouTube session that suppresses the bot check.
+    # Env-switchable so a bot-check regression can be reverted without a redeploy.
+    EMBED_HOSTS = (
+        "https://www.youtube-nocookie.com",
+        "https://www.youtube.com",
+    )
 
     def __post_init__(self):
         if not self.base_url:
             self.base_url = os.environ.get("BRG_BASE_URL", "")
+        if not self.embed_host:
+            self.embed_host = os.environ.get("BRG_EMBED_HOST", "")
+        if self.embed_host not in self.EMBED_HOSTS:
+            self.embed_host = self.EMBED_HOSTS[0]
 
 
 @dataclass
@@ -149,6 +162,7 @@ class Config:
                 pin=os.environ.get("BRG_PIN", ""),
                 session_secret=os.environ.get("BRG_SESSION_SECRET", ""),
                 base_url=os.environ.get("BRG_BASE_URL", ""),
+                embed_host=os.environ.get("BRG_EMBED_HOST", ""),
             ),
             telegram=TelegramConfig(
                 bot_token=os.environ.get("BRG_BOT_TOKEN", ""),
