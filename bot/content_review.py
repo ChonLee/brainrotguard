@@ -1,4 +1,4 @@
-"""ContentReviewMixin: auto-reviews video transcripts via Ollama (local or cloud)."""
+"""ContentReviewMixin: auto-reviews video transcripts via Claude or Ollama (local or cloud)."""
 
 import asyncio
 import logging
@@ -25,20 +25,61 @@ def _get_review_semaphore() -> asyncio.Semaphore:
     return _review_sem
 
 
-def _resolve_provider() -> tuple[str, str, str] | None:
-    """Return (base_url, api_key, model) for cloud if keyed, else local Ollama."""
+def _resolve_provider() -> dict | None:
+    """Pick the review backend: Anthropic if keyed, else Ollama Cloud, else local Ollama."""
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        # Claude model IDs have no colons, so overriding via Unraid env is safe here.
+        model = os.environ.get("ANTHROPIC_MODEL") or "claude-sonnet-5"
+        return {"kind": "anthropic", "api_key": anthropic_key, "model": model}
+
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key:
         # NOTE: model default is baked in, not read from an Unraid env var --
         # colons in values break that template parser.
         model = os.environ.get("OLLAMA_CLOUD_MODEL") or "gpt-oss:120b"
-        return "https://ollama.com/v1", api_key, model
+        return {"kind": "openai", "base_url": "https://ollama.com/v1",
+                "api_key": api_key, "model": model}
 
     base = os.environ.get("OLLAMA_BASE_URL")
     if not base:
         return None
     model = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
-    return f"{base.rstrip('/')}/v1", "ollama", model
+    return {"kind": "openai", "base_url": f"{base.rstrip('/')}/v1",
+            "api_key": "ollama", "model": model}
+
+
+def _call_model(provider: dict, user_content: str) -> str:
+    """Run the review synchronously against the chosen provider; returns review text."""
+    if provider["kind"] == "anthropic":
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=provider["api_key"])
+        response = client.messages.create(
+            model=provider["model"],
+            # Room for long videos with many flags.
+            max_tokens=4096,
+            # Straightforward classification -- skip thinking to keep cost/latency down.
+            thinking={"type": "disabled"},
+            system=REVIEW_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_content}],
+        )
+        if response.stop_reason == "refusal":
+            raise RuntimeError("model declined to review this transcript")
+        return "".join(b.text for b in response.content if b.type == "text")
+
+    from openai import OpenAI
+
+    client = OpenAI(base_url=provider["base_url"], api_key=provider["api_key"])
+    response = client.chat.completions.create(
+        model=provider["model"],
+        max_tokens=1024,
+        messages=[
+            {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+    return response.choices[0].message.content
 
 REVIEW_SYSTEM_PROMPT = (
     "You are a Christian content reviewer. Screen video transcripts and flag anything "
@@ -78,7 +119,7 @@ REVIEW_SYSTEM_PROMPT = (
     "Be thorough but not alarmist. Flag real concerns clearly."
 )
 
-_TS_PAT = re.compile(r'\[(\d{1,2}):(\d{2})\]')
+_TS_PAT = re.compile(r'\[(\d{1,3}):(\d{2})\]')
 
 
 def _build_timestamped_transcript(entries, interval=20):
@@ -120,7 +161,7 @@ def _extract_flag_links(review_text, video_id, limit=25):
 
 
 class ContentReviewMixin:
-    """Adds automatic Ollama content review after video request notifications."""
+    """Adds automatic content review after video request notifications."""
 
     async def _cmd_review(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """/review <youtube_url_or_video_id> — manually run a content review."""
@@ -169,17 +210,17 @@ class ContentReviewMixin:
             pass
 
     async def _send_content_review(self, video: dict) -> None:
-        """Fetch transcript and post an Ollama content review as a follow-up Telegram message."""
+        """Fetch transcript and post a content review as a follow-up Telegram message."""
         video_id = video["video_id"]
         title = video["title"]
 
         provider = _resolve_provider()
         if provider is None:
             logger.warning(
-                "Neither OLLAMA_API_KEY nor OLLAMA_BASE_URL set — skipping content review"
+                "No ANTHROPIC_API_KEY, OLLAMA_API_KEY, or OLLAMA_BASE_URL set — "
+                "skipping content review"
             )
             return
-        base_url, api_key, ollama_model = provider
         loop = asyncio.get_event_loop()
 
         # Fetch transcript
@@ -213,31 +254,20 @@ class ContentReviewMixin:
             )
             return
 
-        # Call Ollama via OpenAI-compatible API
         try:
-            from openai import OpenAI
-
-            client = OpenAI(base_url=base_url, api_key=api_key)
-
-            def _review():
-                return client.chat.completions.create(
-                    model=ollama_model,
-                    max_tokens=1024,
-                    messages=[
-                        {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": (
-                                f"Review this transcript for the video \"{title}\":\n\n"
-                                f"{timestamped_transcript[:30000]}"
-                            ),
-                        },
-                    ],
-                )
+            # Claude's 1M-token context fits any video's full transcript; local
+            # Ollama models have small contexts, so they still get a capped slice.
+            if provider["kind"] != "anthropic":
+                timestamped_transcript = timestamped_transcript[:30000]
+            user_content = (
+                f"Review this transcript for the video \"{title}\":\n\n"
+                f"{timestamped_transcript}"
+            )
 
             async with _get_review_semaphore():
-                response = await loop.run_in_executor(None, _review)
-            review_text = response.choices[0].message.content
+                review_text = await loop.run_in_executor(
+                    None, _call_model, provider, user_content
+                )
 
             # Extract flagged timestamps and send as clickable links
             flag_links = _extract_flag_links(review_text, video_id, limit=25)
